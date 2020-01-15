@@ -1,0 +1,111 @@
+import tensorflow as tf
+
+
+# 相对于第一个版本 增加的批量正则化 2019 7 2
+def bn(x, is_training):
+    return tf.layers.batch_normalization(x, training=is_training)
+
+
+def maxPoolLayer(x, kHeight, kWidth, strideX, strideY, name, padding="SAME"):
+    return tf.nn.max_pool(x, ksize=[1, kHeight, kWidth, 1],
+                          strides=[1, strideX, strideY, 1], padding=padding, name=name)
+
+
+def dropout(x, keepPro, name=None):
+    return tf.nn.dropout(x, keepPro, name)
+
+
+def fcLayer(x, inputD, outputD, reluFlag, name):
+    with tf.variable_scope(name) as scope:
+        w = tf.get_variable("w", shape=[inputD, outputD], dtype="float")
+        b = tf.get_variable("b", [outputD], dtype="float")
+        out = tf.nn.xw_plus_b(x, w, b, name=scope.name)
+        if reluFlag:
+            return tf.nn.relu(out)
+        else:
+            return out
+
+
+def convLayer(x, kHeight, kWidth, strideX, strideY, featureNum, name, padding="SAME"):
+    channel = int(x.get_shape()[-1])
+    with tf.variable_scope(name) as scope:
+        w = tf.get_variable("w", shape=[kHeight, kWidth, channel, featureNum])
+        b = tf.get_variable("b", shape=[featureNum])
+        featureMap = tf.nn.conv2d(x, w, strides=[1, strideY, strideX, 1], padding=padding)
+        out = tf.nn.bias_add(featureMap, b)
+        return tf.nn.relu(tf.reshape(out, featureMap.get_shape().as_list()), name=scope.name)
+
+
+class VGG19(object):
+    def __init__(self, x, keepPro, classNum, is_training):
+        self.X = x
+        self.KEEPPRO = keepPro
+        self.CLASSNUM = classNum
+        self.is_training = is_training
+        self.begin_VGG_19()
+
+    def begin_VGG_19(self):
+        """build model"""
+        conv1_1 = convLayer(self.X, 3, 3, 1, 1, 64, "conv1_1")
+        conv1_1 = bn(conv1_1, self.is_training)
+
+        conv1_2 = convLayer(conv1_1, 3, 3, 1, 1, 64, "conv1_2")
+        conv1_2 = bn(conv1_2, self.is_training)
+        pool1 = maxPoolLayer(conv1_2, 2, 2, 2, 2, "pool1")
+
+        conv2_1 = convLayer(pool1, 3, 3, 1, 1, 128, "conv2_1")
+        conv2_1 = bn(conv2_1, self.is_training)
+
+        conv2_2 = convLayer(conv2_1, 3, 3, 1, 1, 128, "conv2_2")
+        conv2_2 = bn(conv2_2, self.is_training)
+        pool2 = maxPoolLayer(conv2_2, 2, 2, 2, 2, "pool2")
+
+        conv3_1 = convLayer(pool2, 3, 3, 1, 1, 256, "conv3_1")
+        conv3_1 = bn(conv3_1, self.is_training)
+
+        conv3_2 = convLayer(conv3_1, 3, 3, 1, 1, 256, "conv3_2")
+        conv3_2 = bn(conv3_2, self.is_training)
+
+        conv3_3 = convLayer(conv3_2, 3, 3, 1, 1, 256, "conv3_3")
+        conv3_3 = bn(conv3_3, self.is_training)
+
+        conv3_4 = convLayer(conv3_3, 3, 3, 1, 1, 256, "conv3_4")
+        conv3_4 = bn(conv3_4, self.is_training)
+        pool3 = maxPoolLayer(conv3_4, 2, 2, 2, 2, "pool3")
+
+        conv4_1 = convLayer(pool3, 3, 3, 1, 1, 512, "conv4_1")
+        conv4_1 = bn(conv4_1, self.is_training)
+
+        conv4_2 = convLayer(conv4_1, 3, 3, 1, 1, 512, "conv4_2")
+        conv4_2 = bn(conv4_2, self.is_training)
+
+        conv4_3 = convLayer(conv4_2, 3, 3, 1, 1, 512, "conv4_3")
+        conv4_3 = bn(conv4_3, self.is_training)
+
+        conv4_4 = convLayer(conv4_3, 3, 3, 1, 1, 512, "conv4_4")
+        conv4_4 = bn(conv4_4, self.is_training)
+        pool4 = maxPoolLayer(conv4_4, 2, 2, 2, 2, "pool4")
+
+        conv5_1 = convLayer(pool4, 3, 3, 1, 1, 512, "conv5_1")
+        conv5_1 = bn(conv5_1, self.is_training)
+
+        conv5_2 = convLayer(conv5_1, 3, 3, 1, 1, 512, "conv5_2")
+        conv5_2 = bn(conv5_2, self.is_training)
+
+        conv5_3 = convLayer(conv5_2, 3, 3, 1, 1, 512, "conv5_3")
+        conv5_3 = bn(conv5_3, self.is_training)
+
+        conv5_4 = convLayer(conv5_3, 3, 3, 1, 1, 512, "conv5_4")
+        conv5_4 = bn(conv5_4, self.is_training)
+
+        pool5 = maxPoolLayer(conv5_4, 2, 2, 2, 2, "pool5")
+        print('最后一层卷积层的形状是:', pool5.shape)
+
+        fcIn = tf.reshape(pool5, [-1, 1 * 1 * 512])
+        fc6 = fcLayer(fcIn, 1 * 1 * 512, 4096, True, "fc6")
+        dropout1 = dropout(fc6, self.KEEPPRO)
+
+        fc7 = fcLayer(dropout1, 4096, 4096, True, "fc7")
+        dropout2 = dropout(fc7, self.KEEPPRO)
+
+        self.fc8 = fcLayer(dropout2, 4096, self.CLASSNUM, True, "fc8")
